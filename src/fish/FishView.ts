@@ -97,10 +97,12 @@ export class FishView extends Container {
       fish.y + Math.sin(time * 1.15 + fish.phase) * 1.6,
     );
 
-    // Flipping on the horizontal axis keeps the belly down when facing left.
+    // Mirroring the art reverses x, so left-facing fish rotate by heading + PI
+    // to keep the nose on the target and the belly down.
     const facing = Math.cos(fish.heading) >= 0 ? 1 : -1;
     this.visual.scale.set(this.scaleFactor * facing, this.scaleFactor);
-    this.visual.rotation = facing === 1 ? fish.heading : Math.PI - fish.heading;
+    this.visual.rotation =
+      facing === 1 ? fish.heading : fish.heading + Math.PI;
 
     const speedRatio = Math.min(1.8, fish.speed / fish.species.speed);
     const beatSpeed = 4.2 + speedRatio * 4.8;
