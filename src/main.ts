@@ -1,17 +1,36 @@
 import { Application } from "pixi.js";
 
-const app = new Application();
+import { Game } from "./game/Game";
 
-await app.init({
-  background: "#082f49",
-  resizeTo: window,
-  antialias: true,
-});
+async function start(): Promise<void> {
+  const app = new Application();
+  const resolution = Math.min(
+    window.devicePixelRatio || 1,
+    window.innerWidth < 700 ? 1.5 : 2,
+  );
 
-const container = document.getElementById("pixi-container");
+  await app.init({
+    background: "#04293a",
+    resizeTo: window,
+    antialias: true,
+    autoDensity: true,
+    resolution,
+  });
 
-if (!container) {
-  throw new Error("Expected #pixi-container element");
+  const container = document.getElementById("pixi-container");
+  if (!container) {
+    throw new Error("Expected #pixi-container element");
+  }
+
+  container.appendChild(app.canvas);
+
+  const game = new Game(app);
+  game.start();
+
+  // A handle for poking at the tank from the browser console.
+  (window as Window & { __aquarium?: unknown }).__aquarium = { app, game };
 }
 
-container.appendChild(app.canvas);
+void start().catch((error: unknown) => {
+  console.error("Failed to start the aquarium", error);
+});

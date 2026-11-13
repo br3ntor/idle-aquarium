@@ -4,12 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#04293a" />
+    <meta
+      name="description"
+      content="A quiet, living aquarium. Guide your fish, feed the school, and watch the tank drift by."
+    />
     <link rel="stylesheet" href="/style.css" />
     <title>Idle Aquarium</title>
   </head>
   <body>
     <div id="app">
       <div id="pixi-container"></div>
+      <p id="hint" aria-hidden="true">
+        Move to guide your fish &middot; click to feed &middot; scroll to zoom
+      </p>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
