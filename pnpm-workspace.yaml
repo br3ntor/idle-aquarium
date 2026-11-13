@@ -1,0 +1,5 @@
+# These releases are newer than pnpm's 7-day minimumReleaseAge window.
+# Exempt only the exact versions the project uses; everything else keeps the cooldown.
+minimumReleaseAgeExclude:
+  - pixi.js@8.23.0
+  - colord@2.11.0
