@@ -77,6 +77,24 @@ export class Camera {
     );
   }
 
+  /** World-space rectangle currently on screen, with an optional margin. */
+  getViewBounds(margin = 0): {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } {
+    const halfWidth = this.viewportWidth / (2 * this.zoom);
+    const halfHeight = this.viewportHeight / (2 * this.zoom);
+
+    return {
+      x: this.x - halfWidth - margin,
+      y: this.y - halfHeight - margin,
+      width: halfWidth * 2 + margin * 2,
+      height: halfHeight * 2 + margin * 2,
+    };
+  }
+
   screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
     return {
       x: this.x + (screenX - this.viewportWidth / 2) / this.zoom,

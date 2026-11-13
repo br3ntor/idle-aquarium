@@ -3,6 +3,8 @@ export interface Tuning {
   turnScale: number;
   zoom: number;
   npcCount: number;
+  bloom: number;
+  depthBlur: number;
   paused: boolean;
 }
 
@@ -82,6 +84,28 @@ export function createDebugPanel(tuning: Tuning): DebugPanel {
   body.append(
     stats,
     zoomControl.element,
+    createSlider({
+      label: "Bloom",
+      min: 0,
+      max: 1,
+      step: 0.01,
+      value: tuning.bloom,
+      format: (value) => value.toFixed(2),
+      onInput: (value) => {
+        tuning.bloom = value;
+      },
+    }).element,
+    createSlider({
+      label: "Depth blur",
+      min: 0,
+      max: 8,
+      step: 0.1,
+      value: tuning.depthBlur,
+      format: (value) => value.toFixed(1),
+      onInput: (value) => {
+        tuning.depthBlur = value;
+      },
+    }).element,
     createSlider({
       label: "Swim speed",
       min: 0.4,

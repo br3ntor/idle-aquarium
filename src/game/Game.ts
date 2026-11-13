@@ -8,14 +8,16 @@ import {
 import { NPC_SPECIES, PLAYER_SPECIES } from "../content/species";
 import type { FishSpecies } from "../content/species";
 import { clamp } from "../core/math";
-import { mulberry32, randomBetween, randomPick } from "../core/random";
+import { mulberry32, randomBetween } from "../core/random";
 import { Fish } from "../fish/Fish";
 import { FishView } from "../fish/FishView";
+import { PostFX } from "../render/postfx";
 import { createDebugPanel, type DebugPanel, type Tuning } from "../ui/debug";
 import { Ambience } from "../world/ambience";
 import { Backdrop } from "../world/backdrop";
 import { FoodField } from "../world/food";
 import { Scenery } from "../world/scenery";
+import { WaterSurface } from "../world/surface";
 import { SWIM_BOUNDS, WORLD, ZOOM_MAX, ZOOM_MIN } from "../world/world";
 import { Camera } from "./camera";
 import { GameInput } from "./input";
@@ -27,8 +29,10 @@ export class Game {
   private readonly camera = new Camera();
   private readonly backdrop: Backdrop;
   private readonly scenery: Scenery;
+  private readonly surface: WaterSurface;
   private readonly ambience: Ambience;
   private readonly foodField = new FoodField();
+  private readonly postFx: PostFX;
   private readonly world = new Container();
   private readonly fishLayer = new Container();
   private readonly fishes: Fish[] = [];
@@ -43,7 +47,9 @@ export class Game {
     speedScale: 1,
     turnScale: 1,
     zoom: 1,
-    npcCount: 18,
+    npcCount: 28,
+    bloom: 0.18,
+    depthBlur: 2.2,
     paused: false,
   };
 
@@ -57,10 +63,12 @@ export class Game {
     this.camera.setViewport(app.screen.width, app.screen.height);
     this.backdrop = new Backdrop(app.screen.width, app.screen.height);
     this.scenery = new Scenery(this.random);
+    this.surface = new WaterSurface();
     this.ambience = new Ambience(this.random);
 
     this.world.addChild(
       this.scenery.back,
+      this.surface.root,
       this.fishLayer,
       this.foodField.root,
       this.ambience.root,
@@ -71,6 +79,7 @@ export class Game {
       this.world,
       this.backdrop.light,
     );
+    this.postFx = new PostFX(app);
 
     this.player = this.createFish(
       PLAYER_SPECIES,
@@ -86,6 +95,14 @@ export class Game {
     this.camera.zoom = initialZoom;
     this.camera.targetZoom = initialZoom;
     this.camera.snapTo(this.player.x, this.player.y);
+
+    const initialView = this.camera.getViewBounds(180);
+    this.scenery.setViewArea(
+      initialView.x,
+      initialView.y,
+      initialView.width,
+      initialView.height,
+    );
 
     for (let i = 0; i < this.tuning.npcCount; i += 1) {
       this.spawnNpc(i);
@@ -121,6 +138,7 @@ export class Game {
   private readonly onResize = (width: number, height: number): void => {
     this.camera.setViewport(width, height);
     this.backdrop.resize(width, height);
+    this.postFx.resize(width, height);
   };
 
   private step(dt: number): void {
@@ -153,12 +171,18 @@ export class Game {
   }
 
   private render(frameDt: number): void {
+    const view = this.camera.getViewBounds(180);
+    this.scenery.setViewArea(view.x, view.y, view.width, view.height);
+    this.scenery.setDepthBlur(this.tuning.depthBlur);
+    this.postFx.setBloom(this.tuning.bloom);
+
     this.camera.apply(this.world);
 
     for (const fish of this.fishes) {
       this.views.get(fish)?.update(this.time);
     }
     this.scenery.update(this.time);
+    this.surface.update(this.time);
     this.backdrop.update(this.time);
 
     this.statsTimer -= frameDt;
@@ -237,34 +261,101 @@ export class Game {
   }
 
   private spawnNpc(index: number): void {
-    const nearPlayer = index < 7;
-    const angle = this.random() * Math.PI * 2;
-    const radius = nearPlayer
-      ? randomBetween(this.random, 220, 760)
-      : randomBetween(this.random, 300, 1400);
+    const species = this.pickNpcSpecies();
+    const mate =
+      species.schooling > 0.5
+        ? this.fishes.find(
+            (fish) => !fish.isPlayer && fish.species.id === species.id,
+          )
+        : undefined;
 
-    const x = nearPlayer
-      ? this.player.x + Math.cos(angle) * radius
-      : randomBetween(
-          this.random,
-          SWIM_BOUNDS.left + 80,
-          SWIM_BOUNDS.right - 80,
-        );
-    const y = nearPlayer
-      ? this.player.y + Math.sin(angle) * radius * 0.6
-      : randomBetween(
-          this.random,
-          SWIM_BOUNDS.top + 100,
-          SWIM_BOUNDS.bottom - 40,
-        );
+    let x: number;
+    let y: number;
 
-    const species = randomPick(this.random, NPC_SPECIES);
+    if (mate && this.random() < 0.82) {
+      x = mate.x + randomBetween(this.random, -120, 120);
+      y = mate.y + randomBetween(this.random, -80, 80);
+    } else {
+      const nearPlayer = index < 9;
+      const angle = this.random() * Math.PI * 2;
+      const radius = nearPlayer
+        ? randomBetween(this.random, 220, 760)
+        : randomBetween(this.random, 300, 1400);
+
+      x = nearPlayer
+        ? this.player.x + Math.cos(angle) * radius
+        : randomBetween(
+            this.random,
+            SWIM_BOUNDS.left + 80,
+            SWIM_BOUNDS.right - 80,
+          );
+      y = nearPlayer
+        ? this.player.y + Math.sin(angle) * radius * 0.6
+        : this.spawnY(species);
+    }
+
     const fish = this.createFish(
       species,
       clamp(x, SWIM_BOUNDS.left + 40, SWIM_BOUNDS.right - 40),
       clamp(y, SWIM_BOUNDS.top + 40, SWIM_BOUNDS.bottom - 30),
     );
     this.npcs.push(fish);
+  }
+
+  private pickNpcSpecies(): FishSpecies {
+    const available = NPC_SPECIES.filter(
+      (species) =>
+        this.countSpecies(species.id) < (species.maxPopulation ?? Infinity),
+    );
+    const pool = available.length > 0 ? available : NPC_SPECIES;
+
+    let total = 0;
+    for (const species of pool) {
+      total += species.spawnWeight ?? 1;
+    }
+
+    let roll = this.random() * total;
+    for (const species of pool) {
+      roll -= species.spawnWeight ?? 1;
+      if (roll <= 0) return species;
+    }
+
+    return pool[0] as FishSpecies;
+  }
+
+  private countSpecies(id: string): number {
+    let count = 0;
+    for (const fish of this.fishes) {
+      if (!fish.isPlayer && fish.species.id === id) count += 1;
+    }
+    return count;
+  }
+
+  private spawnY(species: FishSpecies): number {
+    const span = SWIM_BOUNDS.bottom - SWIM_BOUNDS.top;
+    const band = species.depthBand ?? "any";
+    const minFraction =
+      band === "top"
+        ? 0.1
+        : band === "bottom"
+          ? 0.55
+          : band === "mid"
+            ? 0.2
+            : 0.05;
+    const maxFraction =
+      band === "top"
+        ? 0.45
+        : band === "bottom"
+          ? 0.92
+          : band === "mid"
+            ? 0.8
+            : 0.95;
+
+    return randomBetween(
+      this.random,
+      SWIM_BOUNDS.top + span * minFraction,
+      SWIM_BOUNDS.top + span * maxFraction,
+    );
   }
 
   private syncNpcCount(): void {

@@ -21,7 +21,7 @@ body {
 body {
   margin: 0;
   overflow: hidden;
-  background: #04293a;
+  background: #010d17;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
 }
@@ -55,8 +55,8 @@ body {
   content: "";
   background: radial-gradient(
     ellipse at 50% 45%,
-    transparent 50%,
-    rgba(2, 14, 21, 0.52) 100%
+    transparent 58%,
+    rgba(2, 10, 15, 0.3) 100%
   );
 }
 

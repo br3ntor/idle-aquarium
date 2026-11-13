@@ -10,7 +10,7 @@ async function start(): Promise<void> {
   );
 
   await app.init({
-    background: "#04293a",
+    background: "#010d17",
     resizeTo: window,
     antialias: true,
     autoDensity: true,

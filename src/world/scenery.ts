@@ -1,7 +1,19 @@
-import { Container, FillGradient, Graphics } from "pixi.js";
+import {
+  BlurFilter,
+  Container,
+  FillGradient,
+  FillPattern,
+  Graphics,
+  Rectangle,
+  Sprite,
+  type Texture,
+} from "pixi.js";
 
 import { palette } from "../content/palette";
 import { randomBetween } from "../core/random";
+import { createPlantTextures } from "../render/plantTextures";
+import type { PlantTextures } from "../render/plantTextures";
+import { createGravelTexture, createRockTexture } from "../render/textures";
 import { WORLD } from "./world";
 
 interface Swayer {
@@ -11,85 +23,270 @@ interface Swayer {
   amplitude: number;
 }
 
+const TAU = Math.PI * 2;
+
 /**
- * Static tank dressing: sand, rocks, kelp and coral. Shapes are drawn once;
- * the only per-frame work is swaying whole plant groups a few degrees.
+ * Static tank dressing: sand, rocks and layered plant sprites. Textures are
+ * baked once; the only per-frame work is swaying whole plant groups.
  */
 export class Scenery {
   readonly back = new Container();
   readonly front = new Container();
+  readonly far = new Container();
 
   private readonly swayers: Swayer[] = [];
+  private readonly farBlur = new BlurFilter({
+    strength: 2.2,
+    quality: 3,
+    kernelSize: 5,
+  });
+  private readonly farArea = new Rectangle();
+  private readonly rockPattern = new FillPattern({
+    texture: createRockTexture(),
+    repetition: "repeat",
+    textureSpace: "global",
+  });
 
   constructor(random: () => number) {
-    const far = new Container();
-    this.back.addChild(far);
+    this.farBlur.repeatEdgePixels = true;
+    this.far.filters = [this.farBlur];
+    this.back.addChild(this.far);
 
-    for (let i = 0; i < 13; i += 1) {
-      const x = (i / 12) * WORLD.width + randomBetween(random, -80, 80);
-      this.addPlant(
-        far,
+    const textures = createPlantTextures();
+
+    this.addFarLayer(random, textures);
+    this.back.addChild(this.buildSand(random));
+    this.addHardscape(random);
+    this.addMidLayer(random, textures);
+    this.addHeroHardscape(random);
+    this.addFrontLayer(random, textures);
+  }
+
+  update(time: number): void {
+    for (const swayer of this.swayers) {
+      swayer.container.rotation =
+        Math.sin(time * swayer.speed + swayer.phase) * swayer.amplitude;
+    }
+  }
+
+  /** Keep the far-layer filter texture viewport-sized instead of world-sized. */
+  setViewArea(x: number, y: number, width: number, height: number): void {
+    this.farArea.set(x, y, width, height);
+    this.far.filterArea = this.farArea;
+  }
+
+  setDepthBlur(strength: number): void {
+    this.farBlur.strength = strength;
+    this.farBlur.enabled = strength > 0.001;
+  }
+
+  private addFarLayer(random: () => number, textures: PlantTextures): void {
+    const count = 32;
+    for (let i = 0; i < count; i += 1) {
+      const x =
+        (i + 0.5) * (WORLD.width / count) + randomBetween(random, -120, 120);
+      const giant = random() > 0.8;
+      const height = giant
+        ? randomBetween(random, 1180, 1480)
+        : randomBetween(random, 700, 1180);
+
+      this.addPlantSprite(
+        this.far,
         random,
         x,
-        WORLD.floorY + randomBetween(random, 10, 70),
-        randomBetween(random, 230, 480),
-        palette.weedDeep,
-        Math.round(randomBetween(random, 3, 6)),
-        randomBetween(random, 1.7, 2.6),
-        0.42,
+        WORLD.floorY + randomBetween(random, 15, 80),
+        height,
+        random() > 0.9
+          ? this.pick(textures.stemRed, random)
+          : this.pick(textures.stemGreen, random),
+        0x83aca2,
+        randomBetween(random, 0.45, 0.65),
+        0.85,
+        0.8,
       );
     }
 
-    this.back.addChild(this.buildSand(random));
+    for (let i = 0; i < 9; i += 1) {
+      const x = randomBetween(random, 80, WORLD.width - 80);
+      this.addPlantSprite(
+        this.far,
+        random,
+        x,
+        WORLD.floorY + randomBetween(random, 20, 70),
+        randomBetween(random, 620, 980),
+        this.pick(textures.sword, random),
+        0x73978d,
+        randomBetween(random, 0.4, 0.55),
+        0.7,
+        0.85,
+      );
+    }
+  }
 
-    for (let i = 0; i < 7; i += 1) {
+  private addHardscape(random: () => number): void {
+    for (let i = 0; i < 8; i += 1) {
       const x =
-        (i + 0.5) * (WORLD.width / 7) + randomBetween(random, -120, 120);
+        (i + 0.5) * (WORLD.width / 8) + randomBetween(random, -140, 140);
       this.addRock(
         this.back,
         random,
         x,
         WORLD.floorY + randomBetween(random, 4, 45),
-        randomBetween(random, 130, 300),
-        randomBetween(random, 55, 135),
+        randomBetween(random, 150, 330),
+        randomBetween(random, 65, 150),
       );
     }
+  }
 
-    for (let i = 0; i < 17; i += 1) {
-      const x = randomBetween(random, 80, WORLD.width - 80);
-      const tall = random() > 0.56;
-      this.addPlant(
+  private addHeroHardscape(random: () => number): void {
+    const baseY = WORLD.floorY + 32;
+
+    this.addRock(
+      this.back,
+      random,
+      2090,
+      baseY,
+      640,
+      250,
+      0x3b473d,
+      0x6c7b65,
+      1,
+    );
+    this.addRock(
+      this.back,
+      random,
+      2370,
+      baseY + 12,
+      560,
+      220,
+      0x4a574b,
+      0x7d8d75,
+      1,
+    );
+    this.addRock(
+      this.back,
+      random,
+      2220,
+      baseY - 18,
+      430,
+      310,
+      0x333f36,
+      0x5d6d58,
+      1,
+    );
+
+    const wood = new Graphics();
+    const rootX = 2410;
+    const rootY = baseY - 30;
+    wood
+      .moveTo(rootX, rootY)
+      .quadraticCurveTo(rootX + 70, rootY - 170, rootX + 210, rootY - 245)
+      .stroke({ width: 28, color: palette.driftwood, cap: "round" })
+      .moveTo(rootX + 40, rootY - 50)
+      .quadraticCurveTo(rootX - 60, rootY - 175, rootX - 170, rootY - 215)
+      .stroke({ width: 18, color: palette.driftwood, cap: "round" })
+      .moveTo(rootX + 120, rootY - 150)
+      .quadraticCurveTo(rootX + 200, rootY - 280, rootX + 320, rootY - 300)
+      .stroke({ width: 13, color: palette.driftwood, cap: "round" });
+
+    for (let i = 0; i < 15; i += 1) {
+      const mossX = rootX + randomBetween(random, -150, 260);
+      const mossY = rootY + randomBetween(random, -260, -20);
+      const radius = randomBetween(random, 10, 26);
+      wood.ellipse(mossX, mossY, radius, radius * 0.5).fill({
+        color: palette.moss,
+        alpha: randomBetween(random, 0.18, 0.48),
+      });
+    }
+
+    this.back.addChild(wood);
+  }
+
+  private addMidLayer(random: () => number, textures: PlantTextures): void {
+    for (let i = 0; i < 28; i += 1) {
+      const x = this.plantX(random);
+      this.addPlantSprite(
         this.back,
         random,
         x,
-        WORLD.floorY + randomBetween(random, 18, 55),
-        tall ? randomBetween(random, 170, 350) : randomBetween(random, 55, 150),
-        random() > 0.45 ? palette.weed : palette.weedLight,
-        Math.round(randomBetween(random, tall ? 3 : 5, tall ? 6 : 9)),
-        tall ? randomBetween(random, 1.3, 2.1) : randomBetween(random, 0.6, 1),
-      );
-    }
-
-    this.addCoralCluster(random, 590, palette.coral);
-    this.addCoralCluster(random, 1490, palette.coralLight);
-    this.addCoralCluster(random, 2570, palette.coral);
-
-    // A few dark silhouettes in front of the fish give the tank real depth.
-    for (let i = 0; i < 7; i += 1) {
-      const x =
-        (i + 0.35) * (WORLD.width / 7) + randomBetween(random, -100, 100);
-      this.addPlant(
-        this.front,
-        random,
-        x,
-        WORLD.height + 10,
-        randomBetween(random, 230, 440),
-        palette.weedDeep,
-        Math.round(randomBetween(random, 3, 5)),
-        randomBetween(random, 1.8, 2.7),
+        WORLD.floorY + randomBetween(random, 18, 62),
+        randomBetween(random, 320, 760),
+        this.pick(textures.stemGreen, random),
+        0xd6e7c8,
+        randomBetween(random, 0.86, 1),
+        1,
         0.9,
       );
     }
+
+    // Red accents are deliberately grouped on the left and far right.
+    for (const x of [190, 330, 470, 620, 760, 900, 2520, 2680, 2860, 3020]) {
+      this.addPlantSprite(
+        this.back,
+        random,
+        x + randomBetween(random, -55, 55),
+        WORLD.floorY + randomBetween(random, 20, 65),
+        randomBetween(random, 300, 720),
+        this.pick(textures.stemRed, random),
+        0xffe4da,
+        randomBetween(random, 0.82, 1),
+        1,
+        0.9,
+      );
+    }
+
+    for (let i = 0; i < 10; i += 1) {
+      this.addPlantSprite(
+        this.back,
+        random,
+        this.plantX(random),
+        WORLD.floorY + randomBetween(random, 20, 70),
+        randomBetween(random, 300, 560),
+        this.pick(textures.sword, random),
+        0xb9cfa9,
+        randomBetween(random, 0.82, 1),
+        0.72,
+        0.95,
+      );
+    }
+
+    // Low carpet in front of the stems, but still behind the fish.
+    for (let i = 0; i < 34; i += 1) {
+      this.addPlantSprite(
+        this.back,
+        random,
+        randomBetween(random, 40, WORLD.width - 40),
+        WORLD.floorY + randomBetween(random, 26, 80),
+        randomBetween(random, 45, 115),
+        this.pick(textures.grass, random),
+        0xd2ecc6,
+        randomBetween(random, 0.72, 0.95),
+        1.1,
+        1.1,
+      );
+    }
+  }
+
+  private addFrontLayer(random: () => number, textures: PlantTextures): void {
+    for (let i = 0; i < 12; i += 1) {
+      const x =
+        (i + 0.25) * (WORLD.width / 12) + randomBetween(random, -90, 90);
+      this.addPlantSprite(
+        this.front,
+        random,
+        x,
+        WORLD.height + randomBetween(random, 10, 45),
+        randomBetween(random, 430, 760),
+        random() > 0.74
+          ? this.pick(textures.stemRed, random)
+          : this.pick(textures.stemGreen, random),
+        0x476b58,
+        randomBetween(random, 0.78, 0.95),
+        0.9,
+        1.15,
+      );
+    }
+
     this.addRock(
       this.front,
       random,
@@ -114,11 +311,54 @@ export class Scenery {
     );
   }
 
-  update(time: number): void {
-    for (const swayer of this.swayers) {
-      swayer.container.rotation =
-        Math.sin(time * swayer.speed + swayer.phase) * swayer.amplitude;
+  private pick(textures: Texture[], random: () => number): Texture {
+    return textures[Math.floor(random() * textures.length)] as Texture;
+  }
+
+  private addPlantSprite(
+    parent: Container,
+    random: () => number,
+    x: number,
+    baseY: number,
+    height: number,
+    texture: Texture,
+    tint: number,
+    alpha: number,
+    widthScale: number,
+    swayScale: number,
+  ): void {
+    const plant = new Container();
+    plant.position.set(x, baseY);
+    plant.alpha = alpha;
+
+    const sprite = new Sprite(texture);
+    sprite.anchor.set(0.5, 1);
+    const scale = height / texture.height;
+    const facing = random() > 0.5 ? 1 : -1;
+    sprite.scale.set(
+      scale * widthScale * randomBetween(random, 0.9, 1.1) * facing,
+      scale,
+    );
+    sprite.tint = tint;
+    plant.addChild(sprite);
+    parent.addChild(plant);
+
+    this.swayers.push({
+      container: plant,
+      phase: random() * TAU,
+      speed: randomBetween(random, 0.16, 0.34),
+      amplitude: randomBetween(random, 0.012, 0.032) * swayScale,
+    });
+  }
+
+  private plantX(random: () => number): number {
+    // Keep a relatively open swimming lane through the middle.
+    if (random() > 0.14) {
+      return random() > 0.5
+        ? randomBetween(random, 80, WORLD.width * 0.38)
+        : randomBetween(random, WORLD.width * 0.62, WORLD.width - 80);
     }
+    return randomBetween(random, WORLD.width * 0.38, WORLD.width * 0.62);
   }
 
   private buildSand(random: () => number): Container {
@@ -136,13 +376,18 @@ export class Scenery {
     }
     points.push({ x: WORLD.width, y: WORLD.floorY });
 
-    const gradient = new FillGradient({
+    const gravel = new FillPattern({
+      texture: createGravelTexture(),
+      repetition: "repeat",
+      textureSpace: "global",
+    });
+    const shadow = new FillGradient({
       start: { x: 0, y: 0 },
       end: { x: 0, y: 1 },
       colorStops: [
-        { offset: 0, color: palette.sandTop },
-        { offset: 0.35, color: palette.sand },
-        { offset: 1, color: palette.sandShadow },
+        { offset: 0, color: "#0a070400" },
+        { offset: 0.45, color: "#0a07041c" },
+        { offset: 1, color: "#0a07045c" },
       ],
     });
 
@@ -167,8 +412,12 @@ export class Scenery {
     sand
       .lineTo(WORLD.width, WORLD.height)
       .closePath()
-      .fill(gradient)
-      .stroke({ width: 4, color: palette.sandTop, alpha: 0.5 });
+      .fill(gravel)
+      .stroke({ width: 3, color: palette.sandTop, alpha: 0.32 });
+
+    const depth = new Graphics()
+      .rect(0, WORLD.floorY + 10, WORLD.width, WORLD.height - WORLD.floorY - 10)
+      .fill(shadow);
 
     const details = new Graphics();
     for (let i = 0; i < 34; i += 1) {
@@ -191,58 +440,8 @@ export class Scenery {
         .stroke({ width: 2, color: palette.sandTop, alpha: 0.18 });
     }
 
-    container.addChild(sand, details);
+    container.addChild(sand, depth, details);
     return container;
-  }
-
-  private addPlant(
-    parent: Container,
-    random: () => number,
-    x: number,
-    baseY: number,
-    height: number,
-    color: number,
-    blades: number,
-    widthScale: number,
-    alpha = 1,
-  ): void {
-    const plant = new Container();
-    plant.position.set(x, baseY);
-    plant.alpha = alpha;
-
-    const graphics = new Graphics();
-    for (let i = 0; i < blades; i += 1) {
-      const bladeHeight = height * randomBetween(random, 0.62, 1.15);
-      const bladeWidth = randomBetween(random, 5, 10) * widthScale;
-      const tip = randomBetween(random, -0.26, 0.26) * height;
-      const control = tip * 0.35;
-
-      graphics
-        .moveTo(-bladeWidth / 2, 0)
-        .quadraticCurveTo(
-          -bladeWidth / 2 + control,
-          -bladeHeight * 0.55,
-          tip,
-          -bladeHeight,
-        )
-        .quadraticCurveTo(
-          bladeWidth / 2 + control,
-          -bladeHeight * 0.55,
-          bladeWidth / 2,
-          0,
-        )
-        .closePath()
-        .fill({ color, alpha: randomBetween(random, 0.72, 1) });
-    }
-
-    plant.addChild(graphics);
-    parent.addChild(plant);
-    this.swayers.push({
-      container: plant,
-      phase: random() * Math.PI * 2,
-      speed: randomBetween(random, 0.22, 0.42),
-      amplitude: randomBetween(random, 0.018, 0.045),
-    });
   }
 
   private addRock(
@@ -256,11 +455,13 @@ export class Scenery {
     highlight: number = palette.rockLight,
     alpha = 1,
   ): void {
+    const shadow = new Graphics()
+      .ellipse(x, baseY + 4, width * 0.58, 9)
+      .fill({ color: palette.rockDeep, alpha: 0.34 });
+
     const rock = new Graphics();
     rock.alpha = alpha;
     rock
-      .ellipse(x, baseY + 3, width * 0.55, 8)
-      .fill({ color: palette.rockDeep, alpha: 0.25 })
       .poly([
         x - width / 2,
         baseY,
@@ -275,7 +476,27 @@ export class Scenery {
         x + width / 2,
         baseY,
       ])
-      .fill(color)
+      .fill(this.rockPattern);
+    rock.tint = color;
+
+    const details = new Graphics();
+    details.alpha = alpha;
+    details
+      .poly([
+        x - width * 0.44,
+        baseY,
+        x - width * 0.32,
+        baseY - height * 0.48,
+        x - width * 0.08,
+        baseY - height * 0.77,
+        x + width * 0.02,
+        baseY - height * 0.86,
+        x + width * 0.05,
+        baseY - height * 0.44,
+        x - width * 0.12,
+        baseY - height * 0.18,
+      ])
+      .fill({ color: palette.rockDeep, alpha: 0.24 })
       .poly([
         x - width * 0.29,
         baseY - height * 0.52,
@@ -286,40 +507,34 @@ export class Scenery {
         x + width * 0.05,
         baseY - height * 0.44,
       ])
-      .fill({ color: highlight, alpha: 0.45 });
-    parent.addChild(rock);
-  }
-
-  private addCoralCluster(
-    random: () => number,
-    x: number,
-    color: number,
-  ): void {
-    const coral = new Container();
-    coral.position.set(x, WORLD.floorY + randomBetween(random, 20, 40));
-    const graphics = new Graphics();
+      .fill({ color: highlight, alpha: 0.38 });
 
     for (let i = 0; i < 5; i += 1) {
-      const height = randomBetween(random, 45, 110);
-      const spread = randomBetween(random, -34, 34);
-      graphics
-        .moveTo(spread * 0.2, 0)
-        .quadraticCurveTo(spread * 0.5, -height * 0.55, spread, -height)
-        .stroke({
-          width: randomBetween(random, 5, 9),
-          color,
-          alpha: randomBetween(random, 0.65, 0.95),
-          cap: "round",
-        });
+      const crackX = x + randomBetween(random, -width * 0.35, width * 0.34);
+      const crackY = baseY - height * randomBetween(random, 0.12, 0.72);
+      const length = randomBetween(random, 10, width * 0.18);
+      details
+        .moveTo(crackX, crackY)
+        .quadraticCurveTo(
+          crackX + length * 0.5,
+          crackY - randomBetween(random, 3, 10),
+          crackX + length,
+          crackY + randomBetween(random, -4, 4),
+        )
+        .stroke({ width: 0.9, color: palette.rockDeep, alpha: 0.35 });
     }
 
-    coral.addChild(graphics);
-    this.back.addChild(coral);
-    this.swayers.push({
-      container: coral,
-      phase: random() * Math.PI * 2,
-      speed: randomBetween(random, 0.18, 0.3),
-      amplitude: randomBetween(random, 0.01, 0.025),
-    });
+    // Moss catches the light on the top of the stone.
+    for (let i = 0; i < 7; i += 1) {
+      const mossX = x + randomBetween(random, -width * 0.3, width * 0.28);
+      const mossY = baseY - height * randomBetween(random, 0.45, 0.86);
+      const radius = randomBetween(random, 5, 16);
+      details.ellipse(mossX, mossY, radius, radius * 0.55).fill({
+        color: palette.moss,
+        alpha: randomBetween(random, 0.25, 0.55),
+      });
+    }
+
+    parent.addChild(shadow, rock, details);
   }
 }

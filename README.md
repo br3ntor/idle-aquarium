@@ -36,9 +36,12 @@ and the number of ambient fish all update live.
   clamping to the tank edges
 - Steering-driven fish: wander, arrive, separation, schooling and soft
   boundary avoidance
-- Flat-vector fish built from shapes, with speed-linked tail beats and correct
-  facing when swimming left
-- Procedural sand, rocks, kelp, coral, bubbles, light rays and floating motes
+- A community cast: fancy goldfish, angelfish, betta, neon tetras, guppies,
+  loaches and platies, with distinct silhouettes, patterns and fins
+- Canvas-generated plant, gravel, rock, caustic and surface textures; layered
+  planted-tank scenery with red accents and a hero hardscape
+- Procedural bubbles, a world-space waterline, light rays, bloom and a
+  viewport-limited depth blur
 - Food pellets and ripples as a small shared point of interest
 - A fixed 60 Hz simulation loop with render-rate animation
 - Live tuning panel and a `window.__aquarium` handle for console experiments
@@ -58,16 +61,25 @@ src/
     FishView.ts       vector fish + swim animation (reads Fish state)
   world/
     world.ts          tank dimensions and swim bounds
-    backdrop.ts       screen-space water gradient and light rays
-    scenery.ts        sand, rocks, plants and coral
-    ambience.ts       bubbles and motes
+    backdrop.ts       screen-space water gradient, light rays and vignette
+    scenery.ts        textured plants, rocks, hardscape and gravel
+    surface.ts        world-space waterline, shimmer and bubble stream
+    ambience.ts       ambient bubbles and motes
     food.ts           food pellets and ripples
+  render/
+    canvas.ts         canvas-to-texture helper
+    textures.ts       procedural gravel, rock, caustic and overlay textures
+    plantTextures.ts  painted stem, sword and grass sprites
+    postfx.ts         bloom and post-effect setup
   content/
     palette.ts        the shared color palette
     species.ts        data-driven fish species
   ui/
     debug.ts          dependency-free tuning panel
 ```
+
+The current visual direction and remaining milestones live in
+`docs/photorealism-plan.md`.
 
 Two ideas are worth internalizing because the rest of the project builds on
 them:
@@ -88,7 +100,8 @@ Geometry is drawn once and then moved or rotated. Avoid clearing and redrawing
 - Multiplayer
 - Persistence or idle progression
 - Accounts, a database or server-side simulation
-- Sprite sheets or image assets; everything is procedural vector art
+- External image assets or sprite sheets; textures and plant sprites are
+  generated procedurally at startup
 
 ## Likely next step
 

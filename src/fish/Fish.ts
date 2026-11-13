@@ -232,6 +232,25 @@ export class Fish {
   private pickWanderTarget(bounds: Bounds): void {
     const angle = this.random() * Math.PI * 2;
     const radius = this.species.wander * (0.45 + this.random() * 1.1);
+    const band = this.species.depthBand ?? "any";
+    const span = bounds.bottom - bounds.top;
+    const minFraction =
+      band === "top"
+        ? 0.1
+        : band === "bottom"
+          ? 0.55
+          : band === "mid"
+            ? 0.2
+            : 0.05;
+    const maxFraction =
+      band === "top"
+        ? 0.45
+        : band === "bottom"
+          ? 0.92
+          : band === "mid"
+            ? 0.8
+            : 0.95;
+
     this.wanderX = clamp(
       this.x + Math.cos(angle) * radius,
       bounds.left + 90,
@@ -239,8 +258,8 @@ export class Fish {
     );
     this.wanderY = clamp(
       this.y + Math.sin(angle) * radius * 0.55,
-      bounds.top + 70,
-      bounds.bottom - 70,
+      bounds.top + span * minFraction,
+      bounds.top + span * maxFraction,
     );
     this.wanderTimer = 2.5 + this.random() * 4;
   }

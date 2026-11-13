@@ -12,6 +12,7 @@
     "format": "oxfmt"
   },
   "dependencies": {
+    "pixi-filters": "6.1.5",
     "pixi.js": "^8.23.0"
   },
   "devDependencies": {
