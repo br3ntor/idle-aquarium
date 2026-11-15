@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from "pixi.js";
 
 import { palette } from "../content/palette";
 import type { FishSpecies } from "../content/species";
+import { clamp } from "../core/math";
 import type { Fish } from "./Fish";
 
 const CANONICAL_LENGTH = 118;
@@ -18,6 +19,9 @@ export class FishView extends Container {
   private readonly ring: Graphics | null;
   private readonly tag: Container | null;
   private readonly scaleFactor: number;
+  private tailPhase = 0;
+  private finPhase = 0;
+  private lastTime = 0;
 
   constructor(fish: Fish, label?: string) {
     super();
@@ -43,6 +47,9 @@ export class FishView extends Container {
 
   update(time: number): void {
     const fish = this.fish;
+    const dt = Math.min(0.05, Math.max(0, time - this.lastTime));
+    this.lastTime = time;
+
     this.position.set(
       fish.x,
       fish.y + Math.sin(time * 1.15 + fish.phase) * 1.6,
@@ -54,18 +61,28 @@ export class FishView extends Container {
     this.visual.scale.set(this.scaleFactor * facing, this.scaleFactor);
     this.visual.rotation = facing === 1 ? fish.heading : fish.heading + Math.PI;
 
-    const speedRatio = Math.min(1.8, fish.speed / fish.species.speed);
-    const beatSpeed = 4.2 + speedRatio * 4.8;
-    const beat = Math.sin(time * beatSpeed + fish.phase);
+    // Tail beat follows swim speed; the pectoral fin follows turning. Phases
+    // accumulate from simulation time so frequency changes never jump.
+    const speedRatio = clamp(fish.speed / fish.species.speed, 0, 2.2);
+    const turnRatio = clamp(fish.turnVelocity / fish.species.turnRate, -1, 1);
+    const tailRate = 2.2 + speedRatio * 6.2;
+    this.tailPhase += tailRate * dt;
+    this.finPhase += tailRate * 0.55 * dt;
+
+    const beat = Math.sin(this.tailPhase + fish.phase);
     const flowing =
       fish.species.tailStyle === "veil" ||
       fish.species.shape === "betta" ||
       fish.species.shape === "goldfish"
         ? 0.24
         : 0.17;
-    this.tail.rotation = beat * (flowing + speedRatio * 0.12);
+    this.tail.rotation = beat * (flowing + speedRatio * 0.2) - turnRatio * 0.16;
+
+    const flap = Math.sin(this.finPhase + fish.phase + 1.2);
     this.pectoral.rotation =
-      0.32 + Math.sin(time * beatSpeed * 0.8 + fish.phase + 1.2) * 0.14;
+      0.32 + flap * (0.08 + speedRatio * 0.04) + turnRatio * 0.5;
+    const flare = Math.abs(turnRatio);
+    this.pectoral.scale.set(1 + flare * 0.18, 1 + flare * 0.3);
 
     if (this.ring) {
       this.ring.alpha = 0.24 + Math.sin(time * 1.25 + fish.phase) * 0.06;

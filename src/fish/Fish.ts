@@ -1,5 +1,5 @@
 import type { FishSpecies } from "../content/species";
-import { clamp, moveToward, turnToward } from "../core/math";
+import { clamp, moveToward, turnToward, wrapAngle } from "../core/math";
 import type { FoodPellet } from "../world/food";
 import type { Bounds } from "../world/world";
 
@@ -44,9 +44,17 @@ export class Fish {
   vy = 0;
   heading: number;
   speed: number;
+  /** Smoothed signed turn rate (rad/s). Rendering uses it for fin animation. */
+  turnVelocity = 0;
 
   private readonly random: () => number;
   private readonly cruiseScale: number;
+  private readonly speedPhase: number;
+  private readonly speedRate: number;
+  private readonly speedRateAlt: number;
+  private burst = 1;
+  private burstTarget = 1;
+  private burstTimer = 0;
   private wanderX: number;
   private wanderY: number;
   private wanderTimer = 0;
@@ -60,8 +68,11 @@ export class Fish {
     this.random = options.random;
     this.heading = this.random() * Math.PI * 2;
     this.speed = this.species.speed * 0.45;
-    this.cruiseScale = 0.88 + this.random() * 0.24;
+    this.cruiseScale = 0.85 + this.random() * 0.3;
     this.phase = this.random() * Math.PI * 2;
+    this.speedPhase = this.random() * Math.PI * 2;
+    this.speedRate = 0.35 + this.random() * 0.5;
+    this.speedRateAlt = 0.9 + this.random() * 1.1;
     this.wanderX = options.x;
     this.wanderY = options.y;
   }
@@ -75,6 +86,14 @@ export class Fish {
     const turnScale = Math.max(0.1, context.turnScale);
     this.wanderTimer -= dt;
 
+    this.burstTimer -= dt;
+    if (this.burstTimer <= 0) {
+      this.burstTarget = this.pickBurst();
+      this.burstTimer = 1.2 + this.random() * 3.2;
+    }
+    this.burst = moveToward(this.burst, this.burstTarget, dt * 0.9);
+    const burst = this.isPlayer ? 1 + (this.burst - 1) * 0.5 : this.burst;
+
     let targetX = this.wanderX;
     let targetY = this.wanderY;
     let stopDistance = 70;
@@ -83,7 +102,8 @@ export class Fish {
       this.species.speed *
       this.cruiseScale *
       speedScale *
-      (0.92 + Math.sin(context.time * 0.55 + this.phase) * 0.08);
+      this.speedEnvelope(context.time) *
+      burst;
 
     const food = this.nearestFood(context.foods);
     if (food) {
@@ -194,11 +214,17 @@ export class Fish {
     }
 
     const steeringMagnitude = Math.hypot(desiredVx, desiredVy);
+    const previousHeading = this.heading;
     if (steeringMagnitude > 0.5) {
       const desiredHeading = Math.atan2(desiredVy, desiredVx);
       const maxTurn = this.species.turnRate * turnScale * dt;
       this.heading = turnToward(this.heading, desiredHeading, maxTurn);
     }
+
+    const instantTurn =
+      dt > 0 ? wrapAngle(this.heading - previousHeading) / dt : 0;
+    this.turnVelocity +=
+      (instantTurn - this.turnVelocity) * Math.min(1, dt * 10);
 
     const maxSpeed = this.species.speed * 2.1 * speedScale;
     const speedTarget = Math.min(steeringMagnitude, maxSpeed);
@@ -229,9 +255,24 @@ export class Fish {
     return closest;
   }
 
+  /** Slow, two-frequency drift so fish never cruise at a single fixed speed. */
+  private speedEnvelope(time: number): number {
+    return (
+      1 +
+      Math.sin(time * this.speedRate + this.speedPhase) * 0.1 +
+      Math.sin(time * this.speedRateAlt + this.speedPhase * 1.7) * 0.07
+    );
+  }
+
+  /** Occasionally glide or dart instead of cruising, then ease between them. */
+  private pickBurst(): number {
+    const roll = this.random();
+    if (roll < 0.35) return 0.75 + this.random() * 0.1;
+    if (roll < 0.85) return 0.95 + this.random() * 0.15;
+    return 1.15 + this.random() * 0.15;
+  }
+
   private pickWanderTarget(bounds: Bounds): void {
-    const angle = this.random() * Math.PI * 2;
-    const radius = this.species.wander * (0.45 + this.random() * 1.1);
     const band = this.species.depthBand ?? "any";
     const span = bounds.bottom - bounds.top;
     const minFraction =
@@ -251,17 +292,33 @@ export class Fish {
             ? 0.8
             : 0.95;
 
+    // Prefer long horizontal runs: far along X, only a slight depth change.
+    // Continue the current direction and flip early near a wall so fish sweep
+    // across the tank instead of grinding into the glass.
+    const reach = this.species.wander * (0.8 + this.random() * 1.1);
+    const verticalReach = reach * (0.16 + this.random() * 0.22);
+    const headingSign = Math.cos(this.heading) >= 0 ? 1 : -1;
+    const nearWall =
+      headingSign > 0
+        ? this.x > bounds.right - 260
+        : this.x < bounds.left + 260;
+    const sign = nearWall ? -headingSign : headingSign;
+    const angle =
+      this.random() < 0.8
+        ? (sign > 0 ? 0 : Math.PI) + (this.random() * 2 - 1) * 0.6
+        : this.random() * Math.PI * 2;
+
     this.wanderX = clamp(
-      this.x + Math.cos(angle) * radius,
+      this.x + Math.cos(angle) * reach,
       bounds.left + 90,
       bounds.right - 90,
     );
     this.wanderY = clamp(
-      this.y + Math.sin(angle) * radius * 0.55,
+      this.y + Math.sin(angle) * verticalReach,
       bounds.top + span * minFraction,
       bounds.top + span * maxFraction,
     );
-    this.wanderTimer = 2.5 + this.random() * 4;
+    this.wanderTimer = 4 + this.random() * 5;
   }
 }
 

@@ -34,8 +34,9 @@ and the number of ambient fish all update live.
 
 - A 3200 × 1800 world viewed through a camera with a dead zone, look-ahead and
   clamping to the tank edges
-- Steering-driven fish: wander, arrive, separation, schooling and soft
-  boundary avoidance
+- Steering-driven fish: long horizontal wanders, arrive, separation, schooling
+  and soft boundary avoidance, with burst-and-glide speed and speed/turn-driven
+  fins
 - A community cast: fancy goldfish, angelfish, betta, neon tetras, guppies,
   loaches and platies, with distinct silhouettes, patterns and fins
 - Canvas-generated plant, gravel, rock, caustic and surface textures; layered
